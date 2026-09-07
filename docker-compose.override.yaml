@@ -1,0 +1,29 @@
+services:
+  orders-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: orders_user
+      POSTGRES_PASSWORD: orders_password
+      POSTGRES_DB: orders_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - orders-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orders_user -d orders_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-worker:
+    volumes:
+      - ./data:/opt/airflow/data
+    environment:
+      ORDERS_DB_HOST: orders-db
+      ORDERS_DB_PORT: "5432"
+      ORDERS_DB_NAME: orders_db
+      ORDERS_DB_USER: orders_user
+      ORDERS_DB_PASSWORD: orders_password
+
+volumes:
+  orders-db-volume:
