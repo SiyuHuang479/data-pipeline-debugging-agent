@@ -5,6 +5,9 @@ from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from datetime import date, datetime
+from decimal import Decimal
+
 
 DB_HOST = os.getenv("ORDERS_DB_HOST", "localhost")
 DB_PORT = int(os.getenv("ORDERS_DB_PORT", "5433"))
@@ -85,6 +88,33 @@ def get_table_schema(table_name: str) -> dict[str, Any]:
         conn.close()
 
 
+
+def _json_safe(value):
+    """
+    Recursively convert database values into
+    JSON-serializable Python values.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: _json_safe(val)
+            for key, val in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [
+            _json_safe(item)
+            for item in value
+        ]
+
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+
+    if isinstance(value, Decimal):
+        return float(value)
+
+    return value
+
 def run_sql(
     query: str,
     max_rows: int = 50,
@@ -160,12 +190,16 @@ def run_sql(
 
             truncated = len(rows) > max_rows
             rows = rows[:max_rows]
+            rows = [
+                _json_safe(dict(row))
+                for row in rows
+            ]
 
             return {
                 "query": cleaned,
                 "row_count_returned": len(rows),
                 "truncated": truncated,
-                "rows": [dict(row) for row in rows],
+                "rows": rows,
             }
 
     finally:

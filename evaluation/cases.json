@@ -1,0 +1,150 @@
+[
+  {
+    "name": "missing_column",
+    "fixture": "data/incidents/missing_column.csv",
+    "dataset": "orders",
+    "healthy_fixture": "data/archive/orders_healthy.csv",
+    "expected_failed_task": "validate_orders",
+    "keyword_groups": [
+      ["amount"],
+      ["missing", "absent", "schema"]
+    ]
+  },
+  {
+    "name": "datatype_change",
+    "fixture": "data/incidents/datatype_change.csv",
+    "dataset": "orders",
+    "healthy_fixture": "data/archive/orders_healthy.csv",
+    "expected_failed_task": "validate_orders",
+    "keyword_groups": [
+        ["customer_id"],
+        ["cus_101", "cus_"],
+        [
+            "integer",
+            "datatype",
+            "type mismatch",
+            "type change",
+            "non-integer"
+        ]
+    ]
+  },
+  {
+    "name": "null_spike",
+    "fixture": "data/incidents/null_spike.csv",
+    "dataset": "orders",
+    "healthy_fixture": "data/archive/orders_healthy.csv",
+    "expected_failed_task": "validate_orders",
+    "keyword_groups": [
+      ["customer_id"],
+      ["null"],
+      ["40%", "40.0%", "40.0", "40"],
+      ["20%", "20.0%", "threshold", "exceed"]
+    ]
+  },
+  {
+    "name": "duplicate_rows",
+    "fixture": "data/incidents/duplicate_rows.csv",
+    "dataset": "orders",
+    "healthy_fixture": "data/archive/orders_healthy.csv",
+    "expected_failed_task": "validate_orders",
+    "keyword_groups": [
+      ["order_id"],
+      ["1003"],
+      ["duplicate", "duplicated"]
+    ]
+  },
+
+{
+  "name": "payments_missing_currency",
+  "dataset": "payments",
+  "fixture": "data/incidents/payments/missing_currency.csv",
+  "healthy_fixture": "data/archive/payments_healthy.csv",
+  "expected_failed_task": "validate_payments",
+  "expected_log_keywords": [
+    "Missing columns",
+    "currency"
+  ],
+  "diagnosis_keyword_groups": [
+    [
+      "currency"
+    ],
+    [
+      "missing",
+      "absent",
+      "schema"
+    ]
+  ]
+},
+{
+  "name": "payments_bad_payment_time",
+  "dataset": "payments",
+  "fixture": "data/incidents/payments/bad_payment_time.csv",
+  "healthy_fixture": "data/archive/payments_healthy.csv",
+  "expected_failed_task": "validate_payments",
+  "expected_log_keywords": [
+    "Invalid payment_time",
+    "not-a-datetime"
+  ],
+  "diagnosis_keyword_groups": [
+    [
+      "payment_time"
+    ],
+    [
+      "not-a-datetime"
+    ],
+    [
+      "datetime",
+      "isoformat",
+      "invalid"
+    ]
+  ]
+},
+{
+  "name": "payments_user_id_null_spike",
+  "dataset": "payments",
+  "fixture": "data/incidents/payments/user_id_null_spike.csv",
+  "healthy_fixture": "data/archive/payments_healthy.csv",
+  "expected_failed_task": "validate_payments",
+  "expected_log_keywords": [
+    "user_id null rate",
+    "40.0%",
+    "20%"
+  ],
+  "diagnosis_keyword_groups": [
+    [
+      "user_id"
+    ],
+    [
+      "null"
+    ],
+    [
+      "40"
+    ],
+    [
+      "20"
+    ]
+  ]
+},
+{
+  "name": "payments_duplicate_payment_id",
+  "dataset": "payments",
+  "fixture": "data/incidents/payments/duplicate_payment_id.csv",
+  "healthy_fixture": "data/archive/payments_healthy.csv",
+  "expected_failed_task": "validate_payments",
+  "expected_log_keywords": [
+    "duplicate payment_id",
+    "PAY-1003"
+  ],
+  "diagnosis_keyword_groups": [
+    [
+      "payment_id"
+    ],
+    [
+      "PAY-1003"
+    ],
+    [
+      "duplicate"
+    ]
+  ]
+}
+]

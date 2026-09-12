@@ -1,149 +1,378 @@
 import csv
-import os
+from collections import Counter
+from pathlib import Path
 from typing import Any
 
 
-DEFAULT_INPUT_FILE = os.getenv(
-    "ORDERS_INPUT_FILE",
-    "data/input/orders.csv",
-)
+PROJECT_ROOT = Path(
+    __file__
+).resolve().parents[1]
 
 
-def inspect_input_data(
-    file_path: str = DEFAULT_INPUT_FILE,
-    sample_size: int = 5,
-) -> dict[str, Any]:
+def _resolve_file_path(
+    file_path: str,
+) -> Path:
     """
-    Inspect the current CSV input file.
+    Resolve a file path.
 
-    Returns:
+    Relative paths are interpreted relative to
+    the project root instead of the current shell
+    working directory.
+    """
+
+    path = Path(file_path)
+
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+
+    return path
+
+
+def _is_null(
+    value: Any,
+) -> bool:
+    """
+    Decide whether a CSV value should be treated
+    as null.
+
+    CSV values are normally strings, but missing
+    fields may also appear as None.
+    """
+
+    if value is None:
+        return True
+
+    if isinstance(value, str):
+        return value.strip() == ""
+
+    return False
+
+
+def inspect_csv(
+    file_path: str,
+    sample_size: int = 5,
+    encoding: str = "utf-8",
+    delimiter: str = ",",
+):
+    """
+    Generic CSV profiler.
+
+    This function does NOT know anything about the
+    expected schema or business rules.
+
+    It only observes the actual CSV file and returns:
+
     - columns
     - row count
     - sample rows
-    - null counts/rates
-    - duplicate order IDs
-    - basic inferred value types
+    - null counts / rates
+    - unique counts
+    - duplicate counts
+    - sample values
+    - basic structural issues
+
+    Expected schema validation belongs in a separate
+    contract-validation layer.
     """
 
-    if not os.path.exists(file_path):
+    path = _resolve_file_path(
+        file_path
+    )
+
+    if not path.exists():
         raise FileNotFoundError(
-            f"Input file not found: {file_path}"
+            f"CSV file not found: {path}"
         )
 
-    with open(file_path, newline="") as f:
-        reader = csv.DictReader(f)
-
-        columns = reader.fieldnames or []
-        rows = list(reader)
-
-    if not rows:
-        return {
-            "file_path": file_path,
-            "columns": columns,
-            "row_count": 0,
-            "sample_rows": [],
-            "null_counts": {},
-            "null_rates": {},
-            "duplicate_order_ids": [],
-        }
-
-    # -----------------------------
-    # Null statistics
-    # -----------------------------
-
-    null_counts = {
-        column: 0
-        for column in columns
-    }
-
-    for row in rows:
-        for column in columns:
-            value = row.get(column)
-
-            if value is None or value.strip() == "":
-                null_counts[column] += 1
-
-    null_rates = {
-        column: round(
-            count / len(rows),
-            4,
+    if not path.is_file():
+        raise ValueError(
+            f"Path is not a file: {path}"
         )
-        for column, count in null_counts.items()
-    }
 
-    # -----------------------------
-    # Duplicate order IDs
-    # -----------------------------
+    if sample_size < 1:
+        raise ValueError(
+            "sample_size must be at least 1"
+        )
 
-    duplicate_order_ids = []
+    # ---------------------------------------------
+    # Read CSV
+    # ---------------------------------------------
 
-    if "order_id" in columns:
-        counts = {}
+    with open(
+        path,
+        newline="",
+        encoding=encoding,
+    ) as file:
 
-        for row in rows:
-            order_id = row.get("order_id")
+        reader = csv.DictReader(
+            file,
+            delimiter=delimiter,
+        )
 
-            if order_id:
-                counts[order_id] = (
-                    counts.get(order_id, 0) + 1
-                )
+        columns = (
+            reader.fieldnames
+            or []
+        )
 
-        duplicate_order_ids = [
-            order_id
-            for order_id, count in counts.items()
+        # Detect duplicate header names.
+        header_counts = Counter(
+            columns
+        )
+
+        duplicate_columns = [
+            column
+            for column, count
+            in header_counts.items()
             if count > 1
         ]
 
-    # -----------------------------
-    # Basic customer_id inspection
-    # -----------------------------
+        # -----------------------------------------
+        # Initialize column statistics
+        # -----------------------------------------
 
-    customer_id_examples = []
+        column_stats = {
+            column: {
+                "null_count": 0,
+                "non_null_count": 0,
+                "value_counts": Counter(),
+                "sample_values": [],
+            }
+            for column in columns
+        }
 
-    if "customer_id" in columns:
-        for row in rows:
-            value = row.get("customer_id")
+        row_count = 0
 
-            if value:
-                customer_id_examples.append(value)
+        sample_rows = []
 
-            if len(customer_id_examples) >= sample_size:
-                break
+        rows_with_extra_fields = 0
+        rows_with_missing_fields = 0
 
-    customer_id_all_integer_like = None
+        # -----------------------------------------
+        # Stream through CSV rows
+        # -----------------------------------------
 
-    if "customer_id" in columns:
-        non_null_values = [
-            row["customer_id"]
-            for row in rows
-            if row.get("customer_id")
-            and row["customer_id"].strip()
+        for row in reader:
+
+            row_count += 1
+
+            # csv.DictReader uses the key None when
+            # a row contains more values than headers.
+            extra_values = row.get(
+                None
+            )
+
+            if extra_values:
+                rows_with_extra_fields += 1
+
+            # A short row may cause a declared column
+            # to have value None.
+            if any(
+                row.get(column) is None
+                for column in columns
+            ):
+                rows_with_missing_fields += 1
+
+            # Keep only a small number of full rows
+            # for evidence/debugging.
+            if len(sample_rows) < sample_size:
+
+                sample_row = {
+                    column: row.get(column)
+                    for column in columns
+                }
+
+                sample_rows.append(
+                    sample_row
+                )
+
+            # -------------------------------------
+            # Profile every column identically.
+            #
+            # No special handling for:
+            # order_id
+            # customer_id
+            # payment_id
+            # etc.
+            # -------------------------------------
+
+            for column in columns:
+
+                value = row.get(
+                    column
+                )
+
+                stats = column_stats[
+                    column
+                ]
+
+                if _is_null(value):
+
+                    stats[
+                        "null_count"
+                    ] += 1
+
+                    continue
+
+                cleaned_value = (
+                    value.strip()
+                    if isinstance(
+                        value,
+                        str,
+                    )
+                    else value
+                )
+
+                stats[
+                    "non_null_count"
+                ] += 1
+
+                stats[
+                    "value_counts"
+                ][cleaned_value] += 1
+
+                if (
+                    len(
+                        stats[
+                            "sample_values"
+                        ]
+                    )
+                    < sample_size
+                ):
+
+                    stats[
+                        "sample_values"
+                    ].append(
+                        cleaned_value
+                    )
+
+    # ---------------------------------------------
+    # Build final column profiles
+    # ---------------------------------------------
+
+    column_profiles = {}
+
+    for column in columns:
+
+        stats = column_stats[
+            column
         ]
 
-        customer_id_all_integer_like = all(
-            value.isdigit()
-            for value in non_null_values
+        value_counts = stats[
+            "value_counts"
+        ]
+
+        unique_count = len(
+            value_counts
         )
+
+        duplicate_count = sum(
+            count - 1
+            for count
+            in value_counts.values()
+            if count > 1
+        )
+
+        null_count = stats[
+            "null_count"
+        ]
+
+        null_rate = (
+            null_count / row_count
+            if row_count > 0
+            else 0
+        )
+
+        column_profiles[
+            column
+        ] = {
+            "null_count":
+                null_count,
+
+            "non_null_count":
+                stats[
+                    "non_null_count"
+                ],
+
+            "null_rate":
+                round(
+                    null_rate,
+                    4,
+                ),
+
+            "unique_count":
+                unique_count,
+
+            "duplicate_count":
+                duplicate_count,
+
+            "sample_values":
+                stats[
+                    "sample_values"
+                ],
+        }
+
+    # ---------------------------------------------
+    # Return JSON-friendly profile
+    # ---------------------------------------------
 
     return {
         "file_path": file_path,
-        "columns": columns,
-        "row_count": len(rows),
-        "sample_rows": rows[:sample_size],
-        "null_counts": null_counts,
-        "null_rates": null_rates,
-        "duplicate_order_ids": duplicate_order_ids,
-        "customer_id_examples": customer_id_examples,
-        "customer_id_all_integer_like":
-            customer_id_all_integer_like,
+
+        "row_count":
+            row_count,
+
+        "column_count":
+            len(columns),
+
+        "columns":
+            columns,
+
+        "sample_rows":
+            sample_rows,
+
+        "column_profiles":
+            column_profiles,
+
+        "structural_issues": {
+            "duplicate_columns":
+                duplicate_columns,
+
+            "rows_with_extra_fields":
+                rows_with_extra_fields,
+
+            "rows_with_missing_fields":
+                rows_with_missing_fields,
+        },
     }
+
+
+# -------------------------------------------------
+# Temporary backward compatibility
+#
+# The old V1 Gemini agent still calls
+# inspect_input_data() without arguments.
+#
+# We will remove this default when
+# debug_agent_afc.py becomes config-driven.
+# -------------------------------------------------
+
+def inspect_input_data(
+    file_path: str = "data/input/orders.csv",
+    sample_size: int = 5,
+):
+    return inspect_csv(
+        file_path=file_path,
+        sample_size=sample_size,
+    )
 
 
 if __name__ == "__main__":
 
     import json
 
-    result = inspect_input_data()
+    result = inspect_csv(
+        "data/input/orders.csv"
+    )
 
     print(
         json.dumps(

@@ -1,0 +1,51 @@
+{
+  "name": "orders",
+  "description": "Orders dataset ingested by the Airflow orders pipeline.",
+
+  "dag_id": "orders_debug_pipeline",
+
+  "input": {
+    "type": "csv",
+    "path": "data/input/orders.csv",
+    "encoding": "utf-8",
+    "delimiter": ","
+  },
+
+  "database": {
+    "type": "postgresql",
+    "schema": "public",
+    "table": "orders"
+  },
+
+  "columns": {
+    "order_id": {
+      "type": "integer",
+      "nullable": false,
+      "unique": true
+    },
+
+    "customer_id": {
+      "type": "integer",
+      "nullable": true,
+      "max_null_rate": 0.2
+    },
+
+    "order_date": {
+      "type": "date",
+      "format": "%Y-%m-%d",
+      "nullable": false
+    },
+
+    "amount": {
+      "type": "decimal",
+      "nullable": false,
+      "min_value": 0,
+      "min_inclusive": false
+    },
+
+    "country": {
+      "type": "string",
+      "nullable": false
+    }
+  }
+}

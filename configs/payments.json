@@ -1,0 +1,55 @@
+{
+  "name": "payments",
+  "description": "Payment transaction dataset ingested by the Airflow payments pipeline.",
+
+  "dag_id": "payments_debug_pipeline",
+
+  "input": {
+    "type": "csv",
+    "path": "data/input/payments.csv",
+    "encoding": "utf-8",
+    "delimiter": ","
+  },
+
+  "database": {
+    "type": "postgresql",
+    "schema": "public",
+    "table": "payments"
+  },
+
+  "columns": {
+    "payment_id": {
+      "type": "string",
+      "nullable": false,
+      "unique": true
+    },
+
+    "user_id": {
+      "type": "integer",
+      "nullable": true,
+      "max_null_rate": 0.2
+    },
+
+    "payment_time": {
+      "type": "datetime",
+      "nullable": false
+    },
+
+    "amount": {
+      "type": "decimal",
+      "nullable": false,
+      "min_value": 0,
+      "min_inclusive": false
+    },
+
+    "currency": {
+      "type": "string",
+      "nullable": false
+    },
+
+    "method": {
+      "type": "string",
+      "nullable": false
+    }
+  }
+}

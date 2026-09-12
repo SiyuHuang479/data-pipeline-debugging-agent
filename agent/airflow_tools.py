@@ -4,6 +4,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+from datetime import datetime, timezone
+import time
 
 
 AIRFLOW_API_URL = os.getenv(
@@ -101,6 +103,171 @@ def _get_json(path: str) -> dict[str, Any]:
             f"Could not connect to Airflow at "
             f"{AIRFLOW_API_URL}: {exc.reason}"
         ) from exc
+
+
+
+def _post_json(
+    path: str,
+    payload: dict | None = None,
+) -> dict[str, Any]:
+    """
+    Send an authenticated POST request to Airflow.
+    """
+
+    token = _get_token()
+
+    body = json.dumps(
+        payload or {}
+    ).encode("utf-8")
+
+    request = Request(
+        f"{AIRFLOW_API_URL}{path}",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urlopen(request) as response:
+            return json.loads(
+                response.read().decode("utf-8")
+            )
+
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8")
+
+        raise RuntimeError(
+            f"Airflow API request failed: "
+            f"HTTP {exc.code}: {body}"
+        ) from exc
+
+
+
+def trigger_pipeline(
+    dag_id: str,
+) -> dict[str, Any]:
+    """
+    Trigger a new DAG run.
+
+    Used by the evaluation harness,
+    not exposed to the LLM agent.
+    """
+
+    encoded_dag_id = quote(
+        dag_id,
+        safe="",
+    )
+
+    logical_date = datetime.now(
+        timezone.utc
+    ).isoformat()
+
+    result = _post_json(
+        f"/api/v2/dags/{encoded_dag_id}/dagRuns",
+        {
+            "logical_date": logical_date,
+        },
+    )
+
+    return {
+        "dag_id": result.get("dag_id"),
+        "dag_run_id": result.get("dag_run_id"),
+        "state": result.get("state"),
+        "logical_date": result.get("logical_date"),
+        "start_date": result.get("start_date"),
+    }
+
+
+def get_pipeline_run(
+    dag_id: str,
+    dag_run_id: str,
+) -> dict[str, Any]:
+    """
+    Get the current state of one specific DAG run.
+    """
+
+    encoded_dag_id = quote(
+        dag_id,
+        safe="",
+    )
+
+    encoded_run_id = quote(
+        dag_run_id,
+        safe="",
+    )
+
+    result = _get_json(
+        f"/api/v2/dags/{encoded_dag_id}"
+        f"/dagRuns/{encoded_run_id}"
+    )
+
+    return {
+        "dag_id": result.get("dag_id"),
+        "dag_run_id": result.get("dag_run_id"),
+        "state": result.get("state"),
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
+        "duration": result.get("duration"),
+    }
+
+
+def wait_for_pipeline(
+    dag_id: str,
+    dag_run_id: str,
+    timeout_seconds: int = 60,
+    poll_interval: int = 2,
+) -> dict[str, Any]:
+    """
+    Wait until a DAG run reaches a terminal state.
+
+    Terminal states:
+    - success
+    - failed
+
+    Raises TimeoutError if the run does not finish
+    within timeout_seconds.
+    """
+
+    terminal_states = {
+        "success",
+        "failed",
+    }
+
+    start_time = time.time()
+
+    while True:
+
+        run = get_pipeline_run(
+            dag_id,
+            dag_run_id,
+        )
+
+        state = run["state"]
+
+        print(
+            f"Pipeline state: {state}"
+        )
+
+        if state in terminal_states:
+            return run
+
+        elapsed = (
+            time.time() - start_time
+        )
+
+        if elapsed >= timeout_seconds:
+            raise TimeoutError(
+                f"DAG run {dag_run_id} did not finish "
+                f"within {timeout_seconds} seconds."
+            )
+
+        time.sleep(
+            poll_interval
+        )
 
 
 def get_pipeline_runs(
